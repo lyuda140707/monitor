@@ -68,9 +68,11 @@ async def handle_health(request):
     return web.json_response({"status": last_status, "ping_url": PING_URL, "every_s": PING_EVERY_SECONDS})
 
 
-# ✅ Нова ручка для виклику команди /status
+# ✅ Тепер /status робить новий пінг при кожному виклику
 async def handle_status(request):
-    return web.Response(text=fmt_status())
+    msg = await check_once()   # запускаємо перевірку прямо зараз
+    return web.Response(text=msg)
+
 
 
 async def main():
