@@ -10,6 +10,7 @@ PING_URL = os.getenv("PING_URL", "https://relax-time2.onrender.com/ping")
 PING_EVERY_SECONDS = int(os.getenv("PING_EVERY_SECONDS", "3600"))
 
 last_status = {"ok": None, "code": None, "ts": None, "latency_ms": None, "error": None}
+offset = 0  # для polling
 
 
 def fmt_status():
@@ -24,11 +25,13 @@ def fmt_status():
         return f"❌ Помилка: {last_status['error']}\n🕒 {when}"
 
 
-async def send_telegram(text: str):
-    if not BOT_TOKEN or not ADMIN_ID:
+async def send_telegram(text: str, chat_id=None):
+    if not BOT_TOKEN:
         return
+    if chat_id is None:
+        chat_id = ADMIN_ID
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": ADMIN_ID, "text": text}
+    data = {"chat_id": chat_id, "text": text}
     async with ClientSession() as session:
         await session.post(url, data=data)
 
@@ -59,6 +62,31 @@ async def scheduler():
         await asyncio.sleep(PING_EVERY_SECONDS)
 
 
+# ------------------- Polling для команд -------------------
+async def polling():
+    global offset
+    api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    while True:
+        try:
+            async with ClientSession() as session:
+                params = {"timeout": 30, "offset": offset + 1}
+                async with session.get(api_url, params=params, timeout=35) as resp:
+                    data = await resp.json()
+                    if "result" in data:
+                        for update in data["result"]:
+                            offset = update["update_id"]
+                            if "message" in update:
+                                chat_id = update["message"]["chat"]["id"]
+                                text = update["message"].get("text", "")
+                                if text == "/status":
+                                    # робимо новий пінг прямо зараз
+                                    msg = await check_once()
+                                    await send_telegram(msg, chat_id=chat_id)
+        except Exception as e:
+            # якщо помилка, чекаємо і пробуємо знову
+            await asyncio.sleep(5)
+
+
 # ------------------- Web-сервер для Render -------------------
 async def handle_root(request):
     return web.Response(text="Monitor running\n\n" + fmt_status())
@@ -68,19 +96,12 @@ async def handle_health(request):
     return web.json_response({"status": last_status, "ping_url": PING_URL, "every_s": PING_EVERY_SECONDS})
 
 
-# ✅ Тепер /status робить новий пінг при кожному виклику
-async def handle_status(request):
-    msg = await check_once()   # запускаємо перевірку прямо зараз
-    return web.Response(text=msg)
-
-
-
 async def main():
     asyncio.create_task(scheduler())
+    asyncio.create_task(polling())  # запускаємо polling
     app = web.Application()
     app.router.add_get("/", handle_root)
     app.router.add_get("/healthz", handle_health)
-    app.router.add_get("/status", handle_status)  # нова ручка
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 5000)))
