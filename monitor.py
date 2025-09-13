@@ -32,7 +32,7 @@ async def scheduler():
     while True:
         msg = await check_once()
         await send_telegram(msg)
-        await asyncio.sleep(60)  # чекати 1 годину
+        await asyncio.sleep(3600)  # чекати 1 годину
 
 # HTTP-сервер для Render
 async def handle(request):
