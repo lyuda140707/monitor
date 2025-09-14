@@ -79,12 +79,22 @@ async def polling():
                                 chat_id = update["message"]["chat"]["id"]
                                 text = update["message"].get("text", "")
                                 if text == "/status":
-                                    # робимо новий пінг прямо зараз
                                     msg = await check_once()
                                     await send_telegram(msg, chat_id=chat_id)
-        except Exception as e:
-            # якщо помилка, чекаємо і пробуємо знову
+        except Exception:
             await asyncio.sleep(5)
+
+
+# ------------------- Self-ping для Render -------------------
+async def self_ping():
+    url = os.getenv("SELF_URL", "https://relax-monitor.onrender.com/healthz")
+    while True:
+        try:
+            async with ClientSession() as s:
+                await s.get(url, timeout=10)
+        except Exception as e:
+            print("Self-ping error:", e)
+        await asyncio.sleep(300)  # кожні 5 хв
 
 
 # ------------------- Web-сервер для Render -------------------
@@ -98,7 +108,8 @@ async def handle_health(request):
 
 async def main():
     asyncio.create_task(scheduler())
-    asyncio.create_task(polling())  # запускаємо polling
+    asyncio.create_task(polling())
+    asyncio.create_task(self_ping())  # 🟢 самопінг
     app = web.Application()
     app.router.add_get("/", handle_root)
     app.router.add_get("/healthz", handle_health)
