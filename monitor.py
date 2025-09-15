@@ -46,20 +46,25 @@ async def check_once():
                 last_status.update(
                     {"ok": ok, "code": resp.status, "ts": time.time(), "latency_ms": latency, "error": None}
                 )
-                if ok:
-                    return f"✅ WebApp працює ({resp.status})\n⏱ {latency} ms"
-                else:
-                    return f"⚠️ Відповідь {resp.status}"
+                return ok
     except Exception as e:
-        last_status.update({"ok": False, "code": None, "ts": time.time(), "latency_ms": None, "error": repr(e)})
-        return f"❌ Помилка: {e}"
+        last_status.update(
+            {"ok": False, "code": None, "ts": time.time(), "latency_ms": None, "error": repr(e)}
+        )
+        return False
 
 
 async def scheduler():
+    prev_ok = None
     while True:
-        msg = await check_once()
-        await send_telegram(msg)
+        ok = await check_once()
+        # 🔔 Надсилаємо повідомлення тільки якщо стан змінився
+        if ok != prev_ok:
+            msg = fmt_status()
+            await send_telegram(msg)
+            prev_ok = ok
         await asyncio.sleep(PING_EVERY_SECONDS)
+
 
 
 # ------------------- Polling для команд -------------------
